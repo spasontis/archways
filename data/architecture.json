@@ -1,0 +1,15 @@
+[
+  { "id": "frontend", "name": "Frontend", "type": "group", "iconName": "Globe", "color": "bg-blue-500/10 border-blue-500/50 text-blue-500", "position": { "x": 0, "y": 0 } },
+  { "id": "pages", "name": "Pages", "type": "item", "parentId": "frontend", "iconName": "FileCode", "position": { "x": 300, "y": -50 } },
+  { "id": "components", "name": "Components", "type": "item", "parentId": "frontend", "iconName": "Layers", "position": { "x": 300, "y": 50 } },
+  { "id": "state", "name": "State", "type": "item", "parentId": "frontend", "iconName": "Cpu", "position": { "x": 300, "y": 150 } },
+  
+  { "id": "backend", "name": "Backend", "type": "group", "iconName": "Server", "color": "bg-amber-500/10 border-amber-500/50 text-amber-500", "position": { "x": 0, "y": 400 } },
+  { "id": "api", "name": "API", "type": "item", "parentId": "backend", "iconName": "FileCode", "position": { "x": 300, "y": 350 } },
+  { "id": "services", "name": "Services", "type": "item", "parentId": "backend", "iconName": "Layers", "position": { "x": 300, "y": 450 } },
+  { "id": "database", "name": "Database", "type": "item", "parentId": "backend", "iconName": "Database", "position": { "x": 300, "y": 550 } },
+  
+  { "id": "infrastructure", "name": "Infrastructure", "type": "group", "iconName": "Cloud", "color": "bg-emerald-500/10 border-emerald-500/50 text-emerald-500", "position": { "x": 600, "y": 200 } },
+  { "id": "cicd", "name": "CI/CD", "type": "item", "parentId": "infrastructure", "iconName": "GitBranch", "position": { "x": 900, "y": 150 } },
+  { "id": "hosting", "name": "Hosting", "type": "item", "parentId": "infrastructure", "iconName": "Server", "position": { "x": 900, "y": 250 } }
+]
