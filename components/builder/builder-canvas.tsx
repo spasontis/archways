@@ -14,6 +14,7 @@ import ReactFlow, {
   SelectionMode,
   MiniMap,
   useReactFlow,
+  OnSelectionChangeParams,
 } from "reactflow"
 import "reactflow/dist/style.css"
 import { useTheme } from "next-themes"
@@ -362,7 +363,9 @@ export function BuilderCanvas() {
     nodes, 
     edges: contextEdges, 
     selectedNodeId, 
+    selectedNodeIds,
     setSelectedNodeId,
+    setSelectedNodeIds,
     onConnect,
     onNodesChange,
     onEdgesChange,
@@ -410,9 +413,38 @@ export function BuilderCanvas() {
     deleteNodes(deleted.map(n => n.id))
   }, [deleteNodes])
 
-  const onNodeClick = useCallback((event: any, node: any) => {
-    setSelectedNodeId(node.id)
-  }, [setSelectedNodeId])
+  const getDescendantIds = useCallback((parentId: string) => {
+    const ids: string[] = []
+    const findChildren = (pid: string) => {
+      contextEdges.forEach(e => {
+        if (e.source === pid) {
+          ids.push(e.target)
+          findChildren(e.target)
+        }
+      })
+    }
+    findChildren(parentId)
+    return ids
+  }, [contextEdges])
+
+  const onNodeClick = useCallback((event: any, clickedNode: any) => {
+    const descendantIds = getDescendantIds(clickedNode.id)
+    const targetIds = [clickedNode.id, ...descendantIds]
+    
+    if (event.shiftKey) {
+      const isAlreadySelected = selectedNodeIds.includes(clickedNode.id)
+      if (isAlreadySelected) {
+        // Remove node and all its descendants from selection
+        setSelectedNodeIds(selectedNodeIds.filter(id => !targetIds.includes(id)))
+      } else {
+        // Add node and all its descendants to selection
+        setSelectedNodeIds([...new Set([...selectedNodeIds, ...targetIds])])
+      }
+    } else {
+      // Select only this node and its descendants
+      setSelectedNodeIds(targetIds)
+    }
+  }, [selectedNodeIds, setSelectedNodeId, setSelectedNodeIds, getDescendantIds])
 
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null)
@@ -421,6 +453,7 @@ export function BuilderCanvas() {
   const onEdgeClick = useCallback((event: any, edge: any) => {
     setDeleteEdgeId(edge.id)
   }, [])
+
 
   if (!mounted) return <div className="flex-1 bg-background" />
 
@@ -443,6 +476,8 @@ export function BuilderCanvas() {
         selectionOnDrag={isSelectMode}
         selectionMode={SelectionMode.Partial}
         panOnDrag={!isSelectMode}
+        nodesDraggable={isSelectMode}
+        multiSelectionKeyCode="Shift"
         onNodeDragStop={() => syncNodes()}
       >
         <Background gap={20} size={1} color={isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"} />

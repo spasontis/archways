@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef, useMemo, useCallback } from "react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useBuilder } from "./builder-context"
@@ -21,14 +21,6 @@ import {
   Github,
   Loader2,
 } from "lucide-react"
-
-interface TreeNode {
-  id: string
-  name: string
-  icon: React.ElementType
-  children?: TreeNode[]
-}
-
 
 import { Trash2 } from "lucide-react"
 import {
@@ -52,23 +44,58 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
-import { useEffect } from "react"
-
 function TreeItem({ 
   node, 
   level = 0, 
   allNodes, 
   onAdd,
-  onDelete
+  onDelete,
+  recursiveDepth = 0
 }: { 
   node: any; 
   level?: number; 
   allNodes: any[]; 
   onAdd: (parentId: string) => void;
   onDelete: (nodeId: string) => void;
+  recursiveDepth?: number;
 }) {
-  const { selectedNodeId, setSelectedNodeId } = useBuilder()
+  // Safety guard for extreme recursion
+  if (recursiveDepth > 50) return null;
+  const { selectedNodeId, selectedNodeIds, setSelectedNodeId, setSelectedNodeIds } = useBuilder()
+  const getDescendantIds = useCallback((parentId: string) => {
+    const ids: string[] = []
+    const findChildren = (pid: string) => {
+      allNodes.forEach(n => {
+        if (n.parentId === pid) {
+          ids.push(n.id)
+          findChildren(n.id)
+        }
+      })
+    }
+    findChildren(parentId)
+    return ids
+  }, [allNodes])
+
+  const onNodeClick = useCallback((event: any, clickedNode: any) => {
+    const descendantIds = getDescendantIds(clickedNode.id)
+    const targetIds = [clickedNode.id, ...descendantIds]
+    
+    if (event.shiftKey) {
+      const isAlreadySelected = selectedNodeIds.includes(clickedNode.id)
+      if (isAlreadySelected) {
+        // Remove node and all its descendants from selection
+        setSelectedNodeIds(selectedNodeIds.filter(id => !targetIds.includes(id)))
+      } else {
+        // Add node and all its descendants to selection
+        setSelectedNodeIds([...new Set([...selectedNodeIds, ...targetIds])])
+      }
+    } else {
+      // Select only this node and its descendants
+      setSelectedNodeIds(targetIds)
+    }
+  }, [selectedNodeIds, setSelectedNodeId, setSelectedNodeIds, getDescendantIds])
   const [isOpen, setIsOpen] = useState(false) // Default to collapsed
+  const lastProcessedSelection = useRef<string>("")
   const isGroup = node.type === "group"
   const children = allNodes
     .filter(n => n.parentId === node.id)
@@ -80,7 +107,7 @@ function TreeItem({
   const hasChildren = children.length > 0
   const Icon = node.icon
   const FolderIcon = isOpen ? FolderOpen : Folder
-  const isSelected = selectedNodeId === node.id
+  const isSelected = selectedNodeIds.includes(node.id)
 
   // Load expansion state from localStorage
   useEffect(() => {
@@ -97,15 +124,48 @@ function TreeItem({
     localStorage.setItem(`folder_expanded_${node.id}`, String(nextState))
   }
 
+  // Auto-expand if this node is a parent of any selected node
+  useEffect(() => {
+    const selectionKey = selectedNodeIds.sort().join(',')
+    
+    // Only auto-expand/collapse if the selection actually changed
+    if (selectionKey === lastProcessedSelection.current) return
+    lastProcessedSelection.current = selectionKey
+
+    if (isGroup && selectedNodeIds.length > 0) {
+      const isThisNodeSelected = selectedNodeIds.includes(node.id)
+      
+      const isParentOfSelected = selectedNodeIds.some(selectedId => {
+        let currentNode = allNodes.find(n => n.id === selectedId)
+        const visited = new Set<string>()
+        while (currentNode?.parentId) {
+          if (visited.has(currentNode.id)) break
+          visited.add(currentNode.id)
+          if (currentNode.parentId === node.id) return true
+          currentNode = allNodes.find(n => n.id === currentNode!.parentId)
+        }
+        return false
+      })
+      
+      if ((isThisNodeSelected || isParentOfSelected) && !isOpen) {
+        setIsOpen(true)
+        localStorage.setItem(`folder_expanded_${node.id}`, "true")
+      } else if (!isThisNodeSelected && !isParentOfSelected && isOpen) {
+        setIsOpen(false)
+        localStorage.setItem(`folder_expanded_${node.id}`, "false")
+      }
+    } else if (selectedNodeIds.length === 0 && isOpen) {
+      setIsOpen(false)
+      localStorage.setItem(`folder_expanded_${node.id}`, "false")
+    }
+  }, [selectedNodeIds, node.id, isGroup, allNodes, isOpen]) // Re-added isOpen but logic is guarded by ref
+
   return (
     <div>
       <div className="group flex items-center pr-2">
         <button
-          onClick={() => {
-            if (isGroup) {
-              toggleOpen()
-            }
-            setSelectedNodeId(node.id)
+          onClick={(e) => {
+            onNodeClick(e, node)
           }}
           className={cn(
             "flex flex-1 items-center gap-1.5 rounded-sm px-2 py-1 text-sm transition-colors text-left",
@@ -116,11 +176,19 @@ function TreeItem({
           style={{ paddingLeft: `${level * 12 + 8}px` }}
         >
           {isGroup ? (
-            isOpen ? (
-              <ChevronDown className="h-4 w-4 shrink-0" />
-            ) : (
-              <ChevronRight className="h-4 w-4 shrink-0" />
-            )
+            <span 
+              onClick={(e) => {
+                e.stopPropagation()
+                toggleOpen()
+              }}
+              className="cursor-pointer"
+            >
+              {isOpen ? (
+                <ChevronDown className="h-4 w-4 shrink-0" />
+              ) : (
+                <ChevronRight className="h-4 w-4 shrink-0" />
+              )}
+            </span>
           ) : (
             <span className="w-4" />
           )}
@@ -168,6 +236,7 @@ function TreeItem({
               allNodes={allNodes}
               onAdd={onAdd}
               onDelete={onDelete}
+              recursiveDepth={recursiveDepth + 1}
             />
           ))}
         </div>
@@ -177,14 +246,15 @@ function TreeItem({
 }
 
 export function ArchitectureSidebar() {
-  const { archNodes: nodes, addNode, deleteNode, setFullArchitecture } = useBuilder()
-  const topLevelNodes = (nodes || [])
+  const { archNodes: nodes, addNode, deleteNode, deleteNodes, setFullArchitecture, selectedNodeIds } = useBuilder()
+  
+  const topLevelNodes = useMemo(() => (nodes || [])
     .filter(n => !n.parentId)
     .sort((a, b) => {
       if (a.type === "group" && b.type !== "group") return -1
       if (a.type !== "group" && b.type === "group") return 1
       return a.name.localeCompare(b.name)
-    })
+    }), [nodes])
 
   const [addDialog, setAddDialog] = useState<{
     isOpen: boolean;
@@ -198,7 +268,7 @@ export function ArchitectureSidebar() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analysisStep, setAnalysisStep] = useState("")
   const [repoUrl, setRepoUrl] = useState("")
-  const [deleteNodeId, setDeleteNodeId] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<string | "selected" | null>(null)
   const [newName, setNewName] = useState("")
 
   const handleCreateNode = () => {
@@ -324,7 +394,19 @@ export function ArchitectureSidebar() {
   return (
     <aside className="flex h-full shrink-0 flex-col border-r border-border bg-card">
       <div className="flex h-10 items-center justify-between border-b border-border px-4">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Architecture</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Architecture</span>
+          {selectedNodeIds.length > 0 && (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-6 w-6 text-muted-foreground hover:text-destructive transition-colors"
+              onClick={() => setDeleteTarget("selected")}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => {
           setAddDialog({ isOpen: true, type: "group" })
           setNewName("")
@@ -342,7 +424,7 @@ export function ArchitectureSidebar() {
               setAddDialog({ isOpen: true, parentId, type: "item" })
               setNewName("")
             }}
-            onDelete={(id) => setDeleteNodeId(id)}
+            onDelete={(id) => setDeleteTarget(id)}
           />
         ))}
       </div>
@@ -442,21 +524,30 @@ export function ArchitectureSidebar() {
       </Dialog>
 
       {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteNodeId} onOpenChange={(open) => !open && setDeleteNodeId(null)}>
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Component?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {deleteTarget === "selected" 
+                ? `Delete ${selectedNodeIds.length} item${selectedNodeIds.length > 1 ? 's' : ''}?` 
+                : "Delete Component?"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove this component and all its child elements from the architecture.
+              {deleteTarget === "selected"
+                ? `This will permanently remove all ${selectedNodeIds.length} selected components and all their nested elements.`
+                : "This will permanently remove this component and all its child elements from the architecture."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction 
               onClick={() => {
-                if (deleteNodeId) {
-                  deleteNode(deleteNodeId)
-                  setDeleteNodeId(null)
+                if (deleteTarget === "selected") {
+                  deleteNodes(selectedNodeIds)
+                  setDeleteTarget(null)
+                } else if (deleteTarget) {
+                  deleteNode(deleteTarget)
+                  setDeleteTarget(null)
                 }
               }}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

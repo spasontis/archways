@@ -22,7 +22,9 @@ interface BuilderContextType {
   edges: Edge[]
   layoutMode: "horizontal" | "vertical"
   selectedNodeId: string | null
+  selectedNodeIds: string[]
   setSelectedNodeId: (id: string | null) => void
+  setSelectedNodeIds: (ids: string[]) => void
   setLayoutMode: (mode: "horizontal" | "vertical") => void
   onNodesChange: (changes: NodeChange[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
@@ -59,19 +61,8 @@ const iconToNameMap: Record<string, string> = {
   "Message Queue": "MessageSquare"
 }
 export function BuilderProvider({ children }: { children: ReactNode }) {
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [isSyncing, setIsSyncing] = useState(false)
-  const [mounted, setMounted] = useState(false)
-  const [layoutMode, setLayoutMode] = useState<"horizontal" | "vertical">("horizontal")
-  const [manualPositions, setManualPositions] = useState<{
-    horizontal: Record<string, { x: number, y: number }>,
-    vertical: Record<string, { x: number, y: number }>
-  }>({ horizontal: {}, vertical: {} })
-  const [showSidebar, setShowSidebar] = useState(true)
-  const [showAssistant, setShowAssistant] = useState(true)
-
   // Default data for SSR and initial client render
-  const defaultNodes: Node[] = architectureData.map(node => ({
+  const defaultNodes: Node[] = useMemo(() => architectureData.map(node => ({
     id: node.id,
     type: node.type,
     data: { 
@@ -81,9 +72,9 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       iconName: node.iconName 
     },
     position: node.position || { x: 0, y: 0 }
-  }))
+  })), [])
 
-  const defaultEdges: Edge[] = architectureData
+  const defaultEdges: Edge[] = useMemo(() => architectureData
     .filter(node => node.parentId)
     .map(node => ({
       id: `e-${node.parentId}-${node.id}`,
@@ -91,10 +82,39 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       target: node.id,
       animated: true,
       type: 'smoothstep'
-    }))
+    })), [])
 
   const [nodes, setNodes] = useState<Node[]>(defaultNodes)
   const [edges, setEdges] = useState<Edge[]>(defaultEdges)
+
+  // Derive selection from nodes
+  const selectedNodeIds = useMemo(() => {
+    return nodes.filter(n => n.selected).map(n => n.id)
+  }, [nodes])
+
+  const selectedNodeId = selectedNodeIds.length > 0 ? selectedNodeIds[0] : null
+
+  const setSelectedNodeIds = useCallback((ids: string[]) => {
+    setNodes(nds => nds.map(node => {
+      const isSelected = ids.includes(node.id)
+      if (node.selected === isSelected) return node
+      return { ...node, selected: isSelected }
+    }))
+  }, [])
+
+  const setSelectedNodeId = useCallback((id: string | null) => {
+    setSelectedNodeIds(id ? [id] : [])
+  }, [setSelectedNodeIds])
+
+  const [isSyncing, setIsSyncing] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  const [layoutMode, setLayoutMode] = useState<"horizontal" | "vertical">("horizontal")
+  const [manualPositions, setManualPositions] = useState<{
+    horizontal: Record<string, { x: number, y: number }>,
+    vertical: Record<string, { x: number, y: number }>
+  }>({ horizontal: {}, vertical: {} })
+  const [showSidebar, setShowSidebar] = useState(true)
+  const [showAssistant, setShowAssistant] = useState(true)
 
   // Keep a ref to nodes/edges for sync operations to avoid stale closures
   const nodesRef = React.useRef(nodes)
@@ -345,17 +365,38 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     setEdges((eds) => eds.filter(e => e.id !== edgeId))
   }, [])
 
+  const getRecursiveDescendantIds = useCallback((rootIds: string[]) => {
+    const allDescendants = new Set<string>()
+    const queue = [...rootIds]
+    
+    while (queue.length > 0) {
+      const currentId = queue.shift()!
+      edges.forEach(edge => {
+        if (edge.source === currentId && !allDescendants.has(edge.target)) {
+          allDescendants.add(edge.target)
+          queue.push(edge.target)
+        }
+      })
+    }
+    
+    return Array.from(allDescendants)
+  }, [edges])
+
   const deleteNode = useCallback((nodeId: string) => {
-    setNodes((nds) => nds.filter(n => n.id !== nodeId))
-    setEdges((eds) => eds.filter(e => e.source !== nodeId && e.target !== nodeId))
-    if (selectedNodeId === nodeId) setSelectedNodeId(null)
-  }, [selectedNodeId])
+    const descendantIds = getRecursiveDescendantIds([nodeId])
+    const allIdsToRemove = [nodeId, ...descendantIds]
+    
+    setNodes((nds) => nds.filter(n => !allIdsToRemove.includes(n.id)))
+    setEdges((eds) => eds.filter(e => !allIdsToRemove.includes(e.source) && !allIdsToRemove.includes(e.target)))
+  }, [getRecursiveDescendantIds])
 
   const deleteNodes = useCallback((nodeIds: string[]) => {
-    setNodes((nds) => nds.filter(n => !nodeIds.includes(n.id)))
-    setEdges((eds) => eds.filter(e => !nodeIds.includes(e.source) && !nodeIds.includes(e.target)))
-    if (selectedNodeId && nodeIds.includes(selectedNodeId)) setSelectedNodeId(null)
-  }, [selectedNodeId])
+    const descendantIds = getRecursiveDescendantIds(nodeIds)
+    const allIdsToRemove = [...new Set([...nodeIds, ...descendantIds])]
+    
+    setNodes((nds) => nds.filter(n => !allIdsToRemove.includes(n.id)))
+    setEdges((eds) => eds.filter(e => !allIdsToRemove.includes(e.source) && !allIdsToRemove.includes(e.target)))
+  }, [getRecursiveDescendantIds])
 
   const addNode = useCallback((name: string, type: NodeType, parentId?: string, iconName?: string) => {
     const newId = Math.random().toString(36).substr(2, 9)
@@ -418,32 +459,42 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     }))
   }, [nodes, edges])
 
+  const contextValue = useMemo(() => ({ 
+    nodes,
+    archNodes,
+    edges, 
+    layoutMode,
+    selectedNodeId, 
+    selectedNodeIds,
+    setSelectedNodeId,
+    setSelectedNodeIds,
+    setLayoutMode,
+    onNodesChange,
+    onEdgesChange,
+    onConnect,
+    deleteEdge,
+    deleteNode,
+    deleteNodes,
+    addNode,
+    setFullArchitecture,
+    isSyncing,
+    showSidebar,
+    setShowSidebar,
+    showAssistant,
+    setShowAssistant,
+    updateNodeData,
+    renameNode,
+    syncNodes
+  }), [
+    nodes, archNodes, edges, layoutMode, selectedNodeId, selectedNodeIds,
+    setSelectedNodeId, setSelectedNodeIds, setLayoutMode, onNodesChange,
+    onEdgesChange, onConnect, deleteEdge, deleteNode, deleteNodes, addNode,
+    setFullArchitecture, isSyncing, showSidebar, showAssistant, 
+    updateNodeData, renameNode, syncNodes
+  ])
+
   return (
-    <BuilderContext.Provider value={{ 
-      nodes,
-      archNodes,
-      edges, 
-      layoutMode,
-      selectedNodeId, 
-      setSelectedNodeId,
-      setLayoutMode,
-      onNodesChange,
-      onEdgesChange,
-      onConnect,
-      deleteEdge,
-      deleteNode,
-      deleteNodes,
-      addNode,
-      setFullArchitecture,
-      isSyncing,
-      showSidebar,
-      setShowSidebar,
-      showAssistant,
-      setShowAssistant,
-      updateNodeData,
-      renameNode,
-      syncNodes
-    }}>
+    <BuilderContext.Provider value={contextValue}>
       {children}
     </BuilderContext.Provider>
   )
