@@ -33,6 +33,13 @@ interface BuilderContextType {
   addNode: (name: string, type: NodeType, parentId?: string, iconName?: string) => void
   setFullArchitecture: (nodes: Node[], edges: Edge[]) => void
   isSyncing: boolean
+  showSidebar: boolean
+  setShowSidebar: (show: boolean) => void
+  showAssistant: boolean
+  setShowAssistant: (show: boolean) => void
+  updateNodeData: (nodeId: string, data: any) => void
+  renameNode: (nodeId: string, newName: string) => void
+  syncNodes: () => void
 }
 
 const BuilderContext = createContext<BuilderContextType | undefined>(undefined)
@@ -60,6 +67,8 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     horizontal: Record<string, { x: number, y: number }>,
     vertical: Record<string, { x: number, y: number }>
   }>({ horizontal: {}, vertical: {} })
+  const [showSidebar, setShowSidebar] = useState(true)
+  const [showAssistant, setShowAssistant] = useState(true)
 
   // Default data for SSR and initial client render
   const defaultNodes: Node[] = architectureData.map(node => ({
@@ -86,6 +95,17 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
 
   const [nodes, setNodes] = useState<Node[]>(defaultNodes)
   const [edges, setEdges] = useState<Edge[]>(defaultEdges)
+
+  // Keep a ref to nodes/edges for sync operations to avoid stale closures
+  const nodesRef = React.useRef(nodes)
+  const edgesRef = React.useRef(edges)
+  const manualPositionsRef = React.useRef(manualPositions)
+
+  useEffect(() => {
+    nodesRef.current = nodes
+    edgesRef.current = edges
+    manualPositionsRef.current = manualPositions
+  }, [nodes, edges, manualPositions])
 
   const applyAutoLayout = useCallback((mode: "horizontal" | "vertical", currentNodes: Node[]) => {
     const isHorizontal = mode === "horizontal"
@@ -163,7 +183,7 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
         y: 40 + meta.avgV * 90
       } : {
         x: 40 + meta.avgV * 150,
-        y: depthOffsets.get(meta.depth) || (40 + meta.depth * 180)
+        y: depthOffsets.get(meta.depth) || (40 + meta.depth * 130)
       }
 
       return {
@@ -234,18 +254,51 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
     }
   }, [layoutMode, applyAutoLayout, mounted])
 
-  // Persistence effect
-  useEffect(() => {
-    if (mounted && nodes.length > 0) {
+  // Sync to localStorage manually or on specific triggers
+  const syncNodes = useCallback(() => {
+    if (mounted && nodesRef.current.length > 0) {
       setIsSyncing(true)
-      localStorage.setItem("arch_nodes", JSON.stringify(nodes))
-      localStorage.setItem("arch_edges", JSON.stringify(edges))
+      localStorage.setItem("arch_nodes", JSON.stringify(nodesRef.current))
+      localStorage.setItem("arch_edges", JSON.stringify(edgesRef.current))
       localStorage.setItem("arch_layout", layoutMode)
-      localStorage.setItem("arch_manual", JSON.stringify(manualPositions))
-      const timer = setTimeout(() => setIsSyncing(false), 800)
+      localStorage.setItem("arch_manual", JSON.stringify(manualPositionsRef.current))
+      const timer = setTimeout(() => setIsSyncing(false), 500)
       return () => clearTimeout(timer)
     }
-  }, [nodes, edges, layoutMode, manualPositions, mounted])
+  }, [layoutMode, mounted])
+
+  // Explicitly update node data without triggering a full re-render/sync immediately
+  const updateNodeData = useCallback((nodeId: string, newData: any) => {
+    setNodes((nds) => nds.map((node) => {
+      if (node.id === nodeId) {
+        return { ...node, data: { ...node.data, ...newData } }
+      }
+      return node
+    }))
+  }, [])
+
+  const renameNode = useCallback((nodeId: string, newName: string) => {
+    setNodes((nds) => {
+      const newNodes = nds.map((node) => {
+        if (node.id === nodeId) {
+          return { ...node, data: { ...node.data, label: newName } }
+        }
+        return node
+      })
+      
+      // Update ref immediately for sync safety
+      nodesRef.current = newNodes
+      
+      // Trigger immediate sync
+      if (mounted) {
+        setIsSyncing(true)
+        localStorage.setItem("arch_nodes", JSON.stringify(newNodes))
+        setTimeout(() => setIsSyncing(false), 200)
+      }
+      
+      return newNodes
+    })
+  }, [mounted])
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
@@ -382,7 +435,14 @@ export function BuilderProvider({ children }: { children: ReactNode }) {
       deleteNodes,
       addNode,
       setFullArchitecture,
-      isSyncing
+      isSyncing,
+      showSidebar,
+      setShowSidebar,
+      showAssistant,
+      setShowAssistant,
+      updateNodeData,
+      renameNode,
+      syncNodes
     }}>
       {children}
     </BuilderContext.Provider>

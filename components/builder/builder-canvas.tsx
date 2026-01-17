@@ -19,6 +19,8 @@ import "reactflow/dist/style.css"
 import { useTheme } from "next-themes"
 
 import { cn } from "@/lib/utils"
+// Ensure useBuilder is imported
+import { useBuilder, NodeType } from "./builder-context"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -27,6 +29,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { Plus, Minus, Globe, Server, Database, MessageSquare, Layers, FileCode, Cpu, Cloud, GitBranch, MousePointer2, Hand, Maximize, Map } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { useState } from "react"
+
 
 // Custom Node Components
 const GroupNode = ({ data, selected }: NodeProps) => {
@@ -114,9 +119,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useBuilder, NodeType } from "./builder-context"
 
 // Custom Node Components
 // ... (GroupNode and ItemNode stay the same, assuming they are defined above or kept)
@@ -366,8 +369,12 @@ export function BuilderCanvas() {
     deleteEdge,
     deleteNodes,
     isSyncing,
-    layoutMode
+    layoutMode,
+    syncNodes,
+    updateNodeData
   } = useBuilder()
+
+  const { fitView } = useReactFlow()
 
   const { theme, resolvedTheme } = useTheme()
   const isDark = resolvedTheme === "dark"
@@ -386,8 +393,18 @@ export function BuilderCanvas() {
   }, [])
 
   const [isSelectMode, setIsSelectMode] = React.useState(false)
-  const [showMiniMap, setShowMiniMap] = React.useState(true)
+  const [showMiniMap, setShowMiniMap] = React.useState(false)
   const [deleteEdgeId, setDeleteEdgeId] = React.useState<string | null>(null)
+
+  // Auto-fit view whenever layoutMode changes
+  useEffect(() => {
+    if (mounted) {
+      const timer = setTimeout(() => {
+        fitView({ duration: 800, padding: 0.2 })
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [layoutMode, fitView, mounted])
 
   const onNodesDelete = useCallback((deleted: any[]) => {
     deleteNodes(deleted.map(n => n.id))
@@ -426,10 +443,12 @@ export function BuilderCanvas() {
         selectionOnDrag={isSelectMode}
         selectionMode={SelectionMode.Partial}
         panOnDrag={!isSelectMode}
+        onNodeDragStop={() => syncNodes()}
       >
         <Background gap={20} size={1} color={isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"} />
         {showMiniMap && (
           <MiniMap 
+            position="top-right"
             nodeStrokeColor="#3b82f6" 
             nodeColor={(n) => n.type === 'group' ? 'rgba(59, 130, 246, 0.1)' : miniMapNodeColor}
             maskColor={isDark ? "rgb(0, 0, 0, 0.2)" : "rgb(255, 255, 255, 0.2)"}

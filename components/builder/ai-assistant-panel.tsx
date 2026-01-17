@@ -5,7 +5,7 @@ import { Sparkles, Send, Lightbulb, AlertTriangle, TrendingUp } from "lucide-rea
 
 export function AiAssistantPanel() {
   return (
-    <aside className="flex w-80 shrink-0 flex-col border-l border-border bg-card">
+    <aside className="flex h-full flex-col bg-card">
       {/* Header */}
       <div className="flex h-10 items-center gap-2 border-b border-border px-4">
         <Sparkles className="h-4 w-4 text-muted-foreground" />

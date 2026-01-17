@@ -7,9 +7,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Boxes, ChevronDown, Save, Share2, Play } from "lucide-react"
+import { Boxes, ChevronDown, Save, Share2, Play, PanelLeft, PanelRight, Maximize2 } from "lucide-react"
+import { useBuilder } from "./builder-context"
+import { useReactFlow } from "reactflow"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+
+import { cn } from "@/lib/utils"
 
 export function BuilderHeader() {
+  const { showSidebar, setShowSidebar, showAssistant, setShowAssistant } = useBuilder()
+  const { fitView } = useReactFlow()
+
   return (
     <header className="flex h-12 shrink-0 items-center justify-between border-b border-border bg-background px-4">
       <div className="flex items-center gap-4">
@@ -33,6 +41,38 @@ export function BuilderHeader() {
         </DropdownMenu>
       </div>
       <div className="flex items-center gap-2">
+        <TooltipProvider>
+          <div className="flex items-center gap-1 mr-2 px-2 border-r border-border">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className={cn("h-8 w-8", !showSidebar && "text-muted-foreground opacity-50")}
+                  onClick={() => setShowSidebar(!showSidebar)}
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Toggle Sidebar</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className={cn("h-8 w-8", !showAssistant && "text-muted-foreground opacity-50")}
+                  onClick={() => setShowAssistant(!showAssistant)}
+                >
+                  <PanelRight className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Toggle Assistant</TooltipContent>
+            </Tooltip>
+          </div>
+        </TooltipProvider>
+
         <ThemeToggle />
         <Button variant="ghost" size="sm" className="h-8 gap-2 text-muted-foreground">
           <Save className="h-4 w-4" />
