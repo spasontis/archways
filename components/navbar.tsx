@@ -42,10 +42,12 @@ export function Navbar() {
         </div>
         <div className="flex items-center gap-4">
           <ThemeToggle />
-          <Button variant="ghost" size="sm" className="text-muted-foreground">
-            Sign in
+          <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
+            <Link href="/sign-in">Sign in</Link>
           </Button>
-          <Button size="sm">Get Started</Button>
+          <Button size="sm" asChild>
+            <Link href="/sign-up">Get Started</Link>
+          </Button>
         </div>
       </div>
     </header>

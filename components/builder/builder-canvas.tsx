@@ -363,7 +363,6 @@ export function BuilderCanvas() {
     nodes, 
     edges: contextEdges, 
     selectedNodeId, 
-    selectedNodeIds,
     setSelectedNodeId,
     setSelectedNodeIds,
     onConnect,
@@ -413,38 +412,9 @@ export function BuilderCanvas() {
     deleteNodes(deleted.map(n => n.id))
   }, [deleteNodes])
 
-  const getDescendantIds = useCallback((parentId: string) => {
-    const ids: string[] = []
-    const findChildren = (pid: string) => {
-      contextEdges.forEach(e => {
-        if (e.source === pid) {
-          ids.push(e.target)
-          findChildren(e.target)
-        }
-      })
-    }
-    findChildren(parentId)
-    return ids
-  }, [contextEdges])
-
-  const onNodeClick = useCallback((event: any, clickedNode: any) => {
-    const descendantIds = getDescendantIds(clickedNode.id)
-    const targetIds = [clickedNode.id, ...descendantIds]
-    
-    if (event.shiftKey) {
-      const isAlreadySelected = selectedNodeIds.includes(clickedNode.id)
-      if (isAlreadySelected) {
-        // Remove node and all its descendants from selection
-        setSelectedNodeIds(selectedNodeIds.filter(id => !targetIds.includes(id)))
-      } else {
-        // Add node and all its descendants to selection
-        setSelectedNodeIds([...new Set([...selectedNodeIds, ...targetIds])])
-      }
-    } else {
-      // Select only this node and its descendants
-      setSelectedNodeIds(targetIds)
-    }
-  }, [selectedNodeIds, setSelectedNodeId, setSelectedNodeIds, getDescendantIds])
+  const onNodeClick = useCallback((event: any, node: any) => {
+    setSelectedNodeId(node.id)
+  }, [setSelectedNodeId])
 
   const onPaneClick = useCallback(() => {
     setSelectedNodeId(null)
@@ -454,6 +424,12 @@ export function BuilderCanvas() {
     setDeleteEdgeId(edge.id)
   }, [])
 
+  const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+    const selectedIds = params.nodes.map(node => node.id)
+    setSelectedNodeIds(selectedIds)
+    // Keep single selection in sync (first selected or null)
+    setSelectedNodeId(selectedIds.length > 0 ? selectedIds[0] : null)
+  }, [setSelectedNodeIds, setSelectedNodeId])
 
   if (!mounted) return <div className="flex-1 bg-background" />
 
@@ -469,6 +445,7 @@ export function BuilderCanvas() {
         onPaneClick={onPaneClick}
         onEdgeClick={onEdgeClick}
         onNodesDelete={onNodesDelete}
+        onSelectionChange={onSelectionChange}
         nodeTypes={nodeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         fitView
@@ -479,6 +456,9 @@ export function BuilderCanvas() {
         nodesDraggable={isSelectMode}
         multiSelectionKeyCode="Shift"
         onNodeDragStop={() => syncNodes()}
+        proOptions={{ hideAttribution: true }}
+        minZoom={0.05}
+        maxZoom={4}
       >
         <Background gap={20} size={1} color={isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)"} />
         {showMiniMap && (
